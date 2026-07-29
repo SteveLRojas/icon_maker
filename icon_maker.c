@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <math.h>
-#include <complex.h>
 #include "lodepng.h"
 
 #define PI 3.14159265358979323846
@@ -12,21 +11,16 @@
 
 #define NUM_COLORS 8
 
-const char cg3_string[] = ".cg3";
 const char png_string[] = ".png";
 const char source_string[] = "-SOURCE";
 const char out_string[] = "-OUT";
 const char scaled_string[] = "-SCALED";
-const char magnitude_string[] = "-MAGNITUDE";
-//const char preview_string[] = "-PREVIEW";
 const char cost_string[] = "-COST";
 const char debug_string[] = "-DEBUG";
 
 uint8_t source_index = 0;
 uint8_t out_index = 0;
 uint8_t scaled_index = 0;
-uint8_t magnitude_index = 0;
-//uint8_t preview_index = 0;
 uint8_t cost_index = 0;
 uint8_t debug_enable;
 uint8_t color_cost = 0;
@@ -190,7 +184,23 @@ void delete_pixel_image(pixel_image* input_image)
 	return;
 }
 
-void fill_RGBA_image(unsigned char* output_image, pixel_image* input_image)
+void rgb_to_pixel_image(pixel_image output, uint8_t* input_red, uint8_t* input_green, uint8_t* input_blue)
+{
+	unsigned int in_index;
+	for(unsigned int y = 0; y < output.height; ++y)
+	{
+		for(unsigned int x = 0; x < output.width; ++x)
+		{
+			in_index = (output.width * y) + x;
+			output.pixels_red[y][x] = input_red[in_index];
+			output.pixels_green[y][x] = input_green[in_index];
+			output.pixels_blue[y][x] = input_blue[in_index];
+		}
+	}
+	return;
+}
+
+void fill_RGBA_image(unsigned char* output_image, pixel_image* input_image)	//TODO: check if this can be optimized
 {
 	unsigned int image_size = 4 * input_image->height * input_image->width;
 	unsigned int x;
@@ -258,9 +268,7 @@ void create_cg3_output(uint8_t* cg3_output, cg3_element* input_elements, pixel_i
 	unsigned int error_offset[NUM_COLORS];
 	unsigned int x;
 	unsigned int y;
-	uint8_t best_match;
-	uint8_t output_byte;
-	//uint8_t pair_offset;	//bit pair offset in output byte
+	uint8_t best_match = 0;
 	unsigned int output_offset;
 
 	for(unsigned int d = 0; d < NUM_COLORS; ++d)
@@ -300,16 +308,6 @@ void create_cg3_output(uint8_t* cg3_output, cg3_element* input_elements, pixel_i
 			}
 		}
 		output_offset = (y >> 1) * 128 + (x >> 1);	//recover element index
-		// pair_offset = output_offset & 0x03;
-		// pair_offset = pair_offset ^ 0x03;
-		// pair_offset = pair_offset << 1;		//determine its position in the output byte
-		// output_offset = output_offset >> 2;	//determine the output byte offset
-		// output_byte = 0x03;
-		// output_byte = output_byte << pair_offset;
-		// output_byte = ~output_byte;		//create mask for output byte
-		// cg3_output[output_offset] = cg3_output[output_offset] & output_byte;	//mask off any existing data in corresponding position of output byte
-		// output_byte = best_match << pair_offset;	//align new data
-		// cg3_output[output_offset] = cg3_output[output_offset] | output_byte;	//write new data to corresponding output byte
 		cg3_output[output_offset] = best_match;
 		error_offset[best_match] = error_offset[best_match] + color_cost;	//tweak the increment for best results
 		//low increments are better for images with very uniform color
@@ -381,11 +379,6 @@ void cg3_to_rgba(unsigned char* output_image, uint8_t* input_image)
 		for(unsigned int x = 0; x < 256; ++x)
 		{
 			cg3_offset = (y >> 1) * 128 + (x >> 1);	//determine element offset
-			// pair_offset = cg3_offset & 0x03;
-			// pair_offset = pair_offset ^ 0x03;
-			// pair_offset = pair_offset << 1;		//determine the element position in the cg3 byte
-			// cg3_offset = cg3_offset >> 2;	//determine byte offset
-			// palette_index = 0x03 & (input_image[cg3_offset] >> pair_offset);
 			palette_index = input_image[cg3_offset];
 			//get colors
 			red = CG3_PALETTE[palette_index * 3];
@@ -425,7 +418,7 @@ void split_image(uint8_t* input, unsigned int height, unsigned int width, uint8_
 	}
 	return;
 }
-
+/*
 void merge_image(uint8_t* output, unsigned int height, unsigned int width, uint8_t* red, uint8_t* green, uint8_t* blue, uint8_t* alpha)
 {
 	if(alpha)
@@ -452,265 +445,65 @@ void merge_image(uint8_t* output, unsigned int height, unsigned int width, uint8
 	}
 	return;
 }
-
-void image_to_complex(uint8_t* input, unsigned int input_height, unsigned int input_width, float complex* output, unsigned int output_height, unsigned int output_width)
+*/
+	//TODO: reformat and scrutinize this
+void resize_bilinear(const uint8_t *src, unsigned int src_width, unsigned int src_height, uint8_t *dst, unsigned int dst_width, unsigned int dst_height)
 {
-	unsigned int out_index;
-	unsigned int in_index;
-	for(unsigned int d = 0; d < input_height; ++d)
-	{
-		for(unsigned int i = 0; i < input_width; ++i)
-		{
-			out_index = (output_width * d) + i;
-			in_index = (input_width * d) + i;
-			output[out_index] = input[in_index];
-		}
-		for(unsigned int i = input_width; i < output_width; ++i)
-		{
-			out_index = (output_width * d) + i;
-			output[out_index] = 0.0;
-		}
-	}
-	for(unsigned int d = input_height; d < output_height; ++d)
-	{
-		for(unsigned int i = 0; i < output_width; ++i)
-		{
-			out_index = (output_width * d) + i;
-			output[out_index] = 0.0;
-		}
-	}
-	return;
-}
+    float scale_x;
+    float scale_y;
 
-/*void complex_to_image(uint8_t* output, unsigned int output_height, unsigned int output_width, float complex* input, unsigned int input_height, unsigned int input_width)
-{
-	unsigned int out_index;
-	unsigned int in_index;
-	for(unsigned int d = 0; d < output_height; ++d)
-	{
-		for(unsigned int i = 0; i < output_width; ++i)
-		{
-			out_index = (output_width * d) + i;
-			in_index = (input_width * d) + i;
-			output[out_index] = (uint8_t)(MIN(255.0, MAX(0.0, (0.5 + crealf(input[in_index])))));
-		}
-	}
-	return;
-}*/
+    if(dst_width > 1)
+    {
+        scale_x = (float)(src_width - 1) / (float)(dst_width - 1);
+    }
+    else
+    {
+        scale_x = 0.0f;
+    }
 
-void complex_to_pixel_image(pixel_image output, float complex* input_red, float complex* input_green, float complex* input_blue)
-{
-	unsigned int in_index;
-	for(unsigned int y = 0; y < output.height; ++y)
-	{
-		for(unsigned int x = 0; x < output.width; ++x)
-		{
-			in_index = (output.width * y) + x;
-			output.pixels_red[y][x] = (uint8_t)(MIN(255.0, MAX(0.0, (0.5 + crealf(input_red[in_index])))));
-			output.pixels_green[y][x] = (uint8_t)(MIN(255.0, MAX(0.0, (0.5 + crealf(input_green[in_index])))));
-			output.pixels_blue[y][x] = (uint8_t)(MIN(255.0, MAX(0.0, (0.5 + crealf(input_blue[in_index])))));
-		}
-	}
-	return;
-}
+    if(dst_height > 1)
+    {
+        scale_y = (float)(src_height - 1) / (float)(dst_height - 1);
+    }
+    else
+    {
+        scale_y = 0.0f;
+    }
 
-void complex_to_magnitude_image(uint8_t* output, unsigned int height, unsigned int width, float complex* input)
-{
-	for(unsigned int d = 0; d < height; ++d)
-	{
-		for(unsigned int i = 0; i < width; ++i)
-		{
-			unsigned int y_index = (d + (height / 2)) % height;
-			unsigned int x_index = (i + (width / 2)) % width;
-			unsigned int in_index = width * d + i;
-			unsigned int out_index = width * y_index + x_index;
-			float magnitude = 128.0 + 23.0 * log(cabsf(input[in_index])/* / (float)(width * height)*/);
-			output[out_index] = (uint8_t)(MIN(255.0, MAX(0.0, (0.5 + magnitude))));
-		}
-	}
-	return;
-}
+    for(unsigned int y = 0; y < dst_height; ++y)
+    {
+        float ys = (float)y * scale_y;
 
-void dft(float complex* input, unsigned int num_points, float complex* output)
-{
-	for(unsigned int freq = 0; freq < num_points; ++freq)
-	{
-		float complex temp = 0.0;
-		for(unsigned int point = 0; point < num_points; ++point)
-		{
-			float exp = 2.0 * PI * (float)freq * ((float)point / (float)num_points);
-			temp = temp + input[point] * (cos(exp) - I * sin(exp));
-		}
-		output[freq] = temp / (float)num_points;
-	}
-}
+        unsigned int y0 = (unsigned int)ys;
+        unsigned int y1 = y0 + 1;
 
-void idft(float complex* input, unsigned int num_points, float complex* output)
-{
-	for(unsigned int point = 0; point < num_points; ++point)
-	{
-		float complex temp = 0.0;
-		for(unsigned int freq = 0; freq < num_points; ++freq)
-		{
-			float exp = 2.0 * PI * (float)freq * ((float)point / (float)num_points);
-			temp = temp + input[freq] * (cos(exp) + I * sin(exp));
-		}
-		output[point] = temp;// / (float)num_points;
-	}
-}
+        if(y1 >= src_height)
+            y1 = src_height - 1;
 
-void dft_2d(float complex* input, unsigned int input_height, unsigned int input_width, float complex* output)
-{
-	float complex* transformed = (float complex*)malloc(sizeof(float complex) * input_width * input_height);
+        float fy = ys - (float)y0;
 
-	//transform the rows
-	printf("DFT: Transforming rows\n");
-	for(unsigned int d = 0; d < input_height; ++d)
-	{
-		unsigned int offset = input_width * d;
-		dft(input + offset, input_width, transformed + offset);
-	}
+        for(unsigned int x = 0; x < dst_width; ++x)
+        {
+            float xs = (float)x * scale_x;
 
-	//transpose the array
-	printf("DFT: Transposing array\n");
-	float complex* transposed = (float complex*)malloc(sizeof(float complex) * input_width * input_height);
-	for(unsigned int d = 0; d < input_height; ++d)
-	{
-		for(unsigned int i = 0; i < input_width; ++i)
-		{
-			transposed[input_height * i + d] = transformed[input_width * d + i];
-		}
-	}
+            unsigned int x0 = (unsigned int)xs;
+            unsigned int x1 = x0 + 1;
 
-	//transform the columns
-	printf("DFT: Transforming columns\n");
-	for(unsigned int d = 0; d < input_width; ++d)
-	{
-		unsigned int offset = input_height * d;
-		dft(transposed + offset, input_height, transformed + offset);
-	}
+            if(x1 >= src_width)
+                x1 = src_width - 1;
 
-	//transpose again
-	printf("DFT: Transposing output\n");
-	for(unsigned int d = 0; d < input_width; ++d)
-	{
-		for(unsigned int i = 0; i < input_height; ++i)
-		{
-			output[input_width * i + d] = transformed[input_height * d + i];
-		}
-	}
+            float fx = xs - (float)x0;
 
-	free(transposed);
-	free(transformed);
-	return;
-}
+            uint8_t p00 = src[y0 * src_width + x0];
+            uint8_t p10 = src[y0 * src_width + x1];
+            uint8_t p01 = src[y1 * src_width + x0];
+            uint8_t p11 = src[y1 * src_width + x1];
 
-void idft_2d(float complex* input, unsigned int input_height, unsigned int input_width, float complex* output)
-{
-	float complex* transformed = (float complex*)malloc(sizeof(float complex) * input_width * input_height);
+            float value = (1.0f - fx) * (1.0f - fy) * (float)p00 + fx * (1.0f - fy) * (float)p10 + (1.0f - fx) * fy * (float)p01 + fx * fy * (float)p11;
 
-	//transform the rows
-	printf("IDFT: Transforming rows\n");
-	for(unsigned int d = 0; d < input_height; ++d)
-	{
-		unsigned int offset = input_width * d;
-		idft(input + offset, input_width, transformed + offset);
-	}
-
-	//transpose the array
-	printf("IDFT: Transposing array\n");
-	float complex* transposed = (float complex*)malloc(sizeof(float complex) * input_width * input_height);
-	for(unsigned int d = 0; d < input_height; ++d)
-	{
-		for(unsigned int i = 0; i < input_width; ++i)
-		{
-			transposed[input_height * i + d] = transformed[input_width * d + i];
-		}
-	}
-
-	//transform the columns
-	printf("IDFT: Transforming columns\n");
-	for(unsigned int d = 0; d < input_width; ++d)
-	{
-		unsigned int offset = input_height * d;
-		idft(transposed + offset, input_height, transformed + offset);
-	}
-
-	//transpose again
-	printf("IDFT: Transposing output\n");
-	for(unsigned int d = 0; d < input_width; ++d)
-	{
-		for(unsigned int i = 0; i < input_height; ++i)
-		{
-			output[input_width * i + d] = transformed[input_height * d + i];
-		}
-	}
-
-	free(transposed);
-	free(transformed);
-	return;
-}
-
-void resize_dft_image(float complex* input, unsigned int input_height, unsigned int input_width, float complex* output, unsigned int output_height, unsigned int output_width)
-{
-	//find data size to copy
-	unsigned int data_height = (output_height < input_height) ? output_height : input_height;
-	unsigned int data_width = (output_width < input_width) ? output_width : input_width;
-
-	unsigned int y_in;
-	unsigned int y_out;
-	unsigned int x_in;
-	unsigned int x_out;
-
-	//clear output
-	for(unsigned int d = 0; d < (output_width * output_height); ++d)
-	{
-		output[d] = 0.0;
-	}
-
-	for(unsigned int y = 0; y < data_height / 2; ++y)
-	{
-		for(unsigned int x = 0; x < data_width / 2; ++x)
-		{
-			output[output_width * y + x] = input[input_width * y + x];
-		}
-
-		x_in = (data_width / 2) + (input_width - data_width);
-		x_out = (data_width / 2) + (output_width - data_width);
-
-		while(x_in < input_width)
-		{
-			output[output_width * y + x_out] = input[input_width * y + x_in];
-			++x_in;
-			++x_out;
-		}
-	}
-
-	y_in = (data_height / 2) + (input_height - data_height);
-	y_out = (data_height / 2) + (output_height - data_height);
-
-	while(y_in < input_height)
-	{
-		for(unsigned int x = 0; x < data_width / 2; ++x)
-		{
-			output[output_width * y_out + x] = input[input_width * y_in + x];
-		}
-
-		x_in = (data_width / 2) + (input_width - data_width);
-		x_out = (data_width / 2) + (output_width - data_width);
-
-		while(x_in < input_width)
-		{
-			output[output_width * y_out + x_out] = input[input_width * y_in + x_in];
-			++x_in;
-			++x_out;
-		}
-
-		++y_in;
-		++y_out;
-	}
-
-	return;
+            dst[y * dst_width + x] = (uint8_t)(value + 0.5f);
+        }
+    }
 }
 
 int main(int argc, char** argv)
@@ -720,8 +513,8 @@ int main(int argc, char** argv)
 	unsigned int arg = 1;
 	if(argc == 1)
 	{
-		printf("Usage: -SOURCE <source file> -OUT <output image> -SCLAED <output scaled image> -MAGNITUDE <output magnitude image> -COST <color cost factor> -DEBUG\n");
-		printf("-SCALED, -MAGNITUDE, -COST, and -DEBUG are optional\n");
+		printf("Usage: -SOURCE <source file> -OUT <output image> -SCLAED <output scaled image> -COST <color cost factor> -DEBUG\n");
+		printf("-SCALED, -COST, and -DEBUG are optional\n");
 		printf("The color cost factor is 0 by default, max is 255. Increase this value to reduce color reuse.\n");
 		exit(1);
 	}
@@ -732,27 +525,19 @@ int main(int argc, char** argv)
 			to_caps(argv[arg]);
 			if(str_comp_partial(source_string, argv[arg]))
 			{
-				source_index = ++arg;
+				source_index = (uint8_t)++arg;
 			}
 			else if(str_comp_partial(out_string, argv[arg]))
 			{
-				out_index = ++arg;
+				out_index = (uint8_t)++arg;
 			}
 			else if(str_comp_partial(scaled_string, argv[arg]))
 			{
-				scaled_index = ++arg;
+				scaled_index = (uint8_t)++arg;
 			}
-			else if(str_comp_partial(magnitude_string, argv[arg]))
-			{
-				magnitude_index = ++arg;
-			}
-			// else if(str_comp_partial(preview_string, argv[arg]))
-			// {
-			// 	preview_index = ++arg;
-			// }
 			else if(str_comp_partial(cost_string, argv[arg]))
 			{
-				cost_index = ++arg;
+				cost_index = (uint8_t)++arg;
 			}
 			else if(str_comp_partial(debug_string, argv[arg]))
 			{
@@ -762,7 +547,7 @@ int main(int argc, char** argv)
 		}
 		else
 		{
-			source_index = arg++;
+			source_index = (uint8_t)arg++;
 		}
 	}
 	if(arg > (unsigned int)argc)
@@ -799,10 +584,13 @@ int main(int argc, char** argv)
 	printf("Loaded image\n");
 	printf("Width is: %u\n", width);
 	printf("Height is: %u\n", height);
-	printf("Image red channel at 0: %u\n", image[0]);
-	printf("Image green channel at 0: %u\n", image[1]);
-	printf("Image blue channel at 0: %u\n", image[2]);
-	printf("Image alpha channel at 0: %d\n", image[3]);
+	if(debug_enable)
+	{
+		printf("Image red channel at 0: %u\n", image[0]);
+		printf("Image green channel at 0: %u\n", image[1]);
+		printf("Image blue channel at 0: %u\n", image[2]);
+		printf("Image alpha channel at 0: %d\n", image[3]);
+	}
 
 	uint8_t* input_red;
 	uint8_t* input_green;
@@ -814,126 +602,38 @@ int main(int argc, char** argv)
 
 	split_image((uint8_t*)image, height, width, input_red, input_green, input_blue, NULL);
 	free(image);
-
-	float complex* cplx_source_red;
-	float complex* cplx_source_green;
-	float complex* cplx_source_blue;
-
-	cplx_source_red = (float complex*)malloc(sizeof(float complex) * width * height);
-	cplx_source_green = (float complex*)malloc(sizeof(float complex) * width * height);
-	cplx_source_blue = (float complex*)malloc(sizeof(float complex) * width * height);
-	printf("Created complex image\n");
-
-	image_to_complex(input_red, height, width, cplx_source_red, height, width);
-	image_to_complex(input_green, height, width, cplx_source_green, height, width);
-	image_to_complex(input_blue, height, width, cplx_source_blue, height, width);
+	
+	//allocate scaled image buffers
+	unsigned int new_height = 192;
+	unsigned int new_width = 256;
+	
+	uint8_t* scaled_red;
+	uint8_t* scaled_green;
+	uint8_t* scaled_blue;
+	
+	scaled_red = (uint8_t*)malloc(sizeof(uint8_t) * new_width * new_height);
+	scaled_green = (uint8_t*)malloc(sizeof(uint8_t) * new_width * new_height);
+	scaled_blue = (uint8_t*)malloc(sizeof(uint8_t) * new_width * new_height);
+	printf("Created scaled image\n");
+	
+	//scale image
+	resize_bilinear(input_red, width, height, scaled_red, new_width, new_height);
+	resize_bilinear(input_green, width, height, scaled_green, new_width, new_height);
+	resize_bilinear(input_blue, width, height, scaled_blue, new_width, new_height);
 	free(input_red);
 	free(input_green);
 	free(input_blue);
-	printf("Copied data to complex image\n");
-
-	float complex* dft_red;
-	float complex* dft_green;
-	float complex* dft_blue;
-
-	dft_red = (float complex*)malloc(sizeof(float complex) * width * height);
-	dft_green = (float complex*)malloc(sizeof(float complex) * width * height);
-	dft_blue = (float complex*)malloc(sizeof(float complex) * width * height);
-	printf("Created blank DFT image\n");
-
-	dft_2d(cplx_source_red, height, width, dft_red);
-	dft_2d(cplx_source_green, height, width, dft_green);
-	dft_2d(cplx_source_blue, height, width, dft_blue);
-	free(cplx_source_red);
-	free(cplx_source_green);
-	free(cplx_source_blue);
-	printf("Filled DFT image\n");
-
-	if(magnitude_index)
-	{
-		uint8_t* magnitude_red;
-		uint8_t* magnitude_green;
-		uint8_t* magnitude_blue;
-
-		magnitude_red = (uint8_t*)malloc(sizeof(uint8_t) * width * height);
-		magnitude_green = (uint8_t*)malloc(sizeof(uint8_t) * width * height);
-		magnitude_blue = (uint8_t*)malloc(sizeof(uint8_t) * width * height);
-
-		complex_to_magnitude_image(magnitude_red, height, width, dft_red);
-		complex_to_magnitude_image(magnitude_green, height, width, dft_green);
-		complex_to_magnitude_image(magnitude_blue, height, width, dft_blue);
-		printf("Created magnitude plot\n");
-
-		uint8_t* magnitude_image;
-		magnitude_image = (uint8_t*)malloc(sizeof(uint8_t) * height * width * 4);
-
-		merge_image(magnitude_image, height, width, magnitude_red, magnitude_green, magnitude_blue, NULL);
-		free(magnitude_red);
-		free(magnitude_green);
-		free(magnitude_blue);
-		printf("Converted magnitude plot to RGBA\n");
-
-		//TODO: enforce PNG file extension
-		error = lodepng_encode32_file(argv[magnitude_index], magnitude_image, width, height);
-		if(error)
-		{
-			printf("error %u: %s\n", error, lodepng_error_text(error));
-			return 1;
-		}
-		printf("Wrote magnitude image\n");
-		free(magnitude_image);
-	}
-
-	float complex* resized_dft_red;
-	float complex* resized_dft_green;
-	float complex* resized_dft_blue;
-
-	unsigned int new_height = 192;
-	unsigned int new_width = 256;
-
-	resized_dft_red = (float complex*)malloc(sizeof(float complex) * new_width * new_height);
-	resized_dft_green = (float complex*)malloc(sizeof(float complex) * new_width * new_height);
-	resized_dft_blue = (float complex*)malloc(sizeof(float complex) * new_width * new_height);
-	printf("Created new DFT image\n");
-
-	resize_dft_image(dft_red, height, width, resized_dft_red, new_height, new_width);
-	resize_dft_image(dft_green, height, width, resized_dft_green, new_height, new_width);
-	resize_dft_image(dft_blue, height, width, resized_dft_blue, new_height, new_width);
-	free(dft_red);
-	free(dft_green);
-	free(dft_blue);
-	printf("Resized DFT image\n");
-
-	float complex* ift_red;
-	float complex* ift_green;
-	float complex* ift_blue;
-
-	ift_red = (float complex*)malloc(sizeof(float complex) * new_width * new_height);
-	ift_green = (float complex*)malloc(sizeof(float complex) * new_width * new_height);
-	ift_blue = (float complex*)malloc(sizeof(float complex) * new_width * new_height);
-	printf("Created IFT image\n");
-
-	idft_2d(resized_dft_red, new_height, new_width, ift_red);
-	idft_2d(resized_dft_green, new_height, new_width, ift_green);
-	idft_2d(resized_dft_blue, new_height, new_width, ift_blue);
-	free(resized_dft_red);
-	free(resized_dft_green);
-	free(resized_dft_blue);
-	printf("Filled IFT image\n");
-
-	uint8_t* output_red;
-	uint8_t* output_green;
-	uint8_t* output_blue;
-
+	printf("Resized input image\n");
+	
 	//create scaled RGB image
 	pixel_image scaled_image;
 	create_pixel_image(&scaled_image, new_height, new_width);
 	printf("Created new RGB image\n");
 
-	complex_to_pixel_image(scaled_image, ift_red, ift_green, ift_blue);
-	free(ift_red);
-	free(ift_green);
-	free(ift_blue);
+	rgb_to_pixel_image(scaled_image, scaled_red, scaled_green, scaled_blue);
+	free(scaled_red);
+	free(scaled_green);
+	free(scaled_blue);
 	printf("Filled in new RGB image\n");
 
 	//create cg3 elements
@@ -956,39 +656,21 @@ int main(int argc, char** argv)
 	create_cg3_output(cg3_image, cg3_display_elements, &scaled_image);
 	printf("Created CG3 image\n");
 
-	//write cg3 image
-	// char new_name[32];
-	// replace_file_extension(cg3_string, argv[out_index], new_name);
-	// size_t written = 0;
-	// FILE* f = fopen(new_name, "wb");
-	// while (written < 3072)
-	// {
-	// 	written += fwrite(cg3_image + written, sizeof(uint8_t), 3072 - written, f);
-	// 	if (written == 0) {
-	// 	    printf("Error writing output file!\n");
-	// 	}
-	// }
-	// fclose(f);
-	// printf("Wrote CG3 image\n");
-
+	//create cg3 preview
 	unsigned int image_size;
-	//if(preview_index)
+	image_size = 4 * 192 * 256;
+	unsigned char* rgba_cg3_preview = (unsigned char*)malloc(image_size * sizeof(unsigned char));
+	cg3_to_rgba(rgba_cg3_preview, cg3_image);
+	printf("Created CG3 preview\n");
+	//TODO: enforce PNG file extension
+	error = lodepng_encode32_file(argv[out_index], rgba_cg3_preview, 256, 192);
+	if(error)
 	{
-		//create cg3 preview
-		image_size = 4 * 192 * 256;
-		unsigned char* rgba_cg3_preview = (unsigned char*)malloc(image_size * sizeof(unsigned char));
-		cg3_to_rgba(rgba_cg3_preview, cg3_image);
-		printf("Created CG3 preview\n");
-		//TODO: enforce PNG file extension
-		error = lodepng_encode32_file(argv[out_index], rgba_cg3_preview, 256, 192);
-		if(error)
-		{
-			printf("error %u: %s\n", error, lodepng_error_text(error));
-			return 1;
-		}
-		free(rgba_cg3_preview);
-		printf("Wrote CG3 preview\n");
+		printf("error %u: %s\n", error, lodepng_error_text(error));
+		return 1;
 	}
+	free(rgba_cg3_preview);
+	printf("Wrote CG3 preview\n");
 
 	if(scaled_index)
 	{
@@ -996,7 +678,6 @@ int main(int argc, char** argv)
 		image_size = 4 * scaled_image.height * scaled_image.width;
 		unsigned char* output_image = (unsigned char*)malloc(image_size * sizeof(unsigned char));
 		fill_RGBA_image(output_image, &scaled_image);
-		delete_pixel_image(&scaled_image);
 		printf("Converted RGB image to RGBA\n");
 
 		//Write scaled image to file
@@ -1009,6 +690,8 @@ int main(int argc, char** argv)
 		}
 		free(output_image);
 		printf("Wrote scaled image\n");
-		return 0;
 	}
+	
+	delete_pixel_image(&scaled_image);
+	return 0;
 }
