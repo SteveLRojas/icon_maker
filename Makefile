@@ -5,7 +5,7 @@ TARGET = icon_maker
 .PHONY: all
 all: $(TARGET)
 
-TARGET_OBJS = icon_maker.o lodepng.o
+TARGET_OBJS = icon_maker.o lodepng.o argparse.o
 
 $(TARGET): $(TARGET_OBJS)
 	mkdir -p $(dir $@)
@@ -13,8 +13,10 @@ $(TARGET): $(TARGET_OBJS)
 
 icon_maker.o: icon_maker.c
 lodepng.o: lodepng.c
+argparse.o: argparse.c
 
 icon_maker.o: CFLAGS += -Wconversion
+argparse.o: CFLAGS += -Wconversion
 
 %.o: %.c
 	$(CC) -c $(CFLAGS) $< -o $@

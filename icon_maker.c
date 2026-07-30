@@ -3,29 +3,14 @@
 #include <stdint.h>
 #include <math.h>
 #include "lodepng.h"
-
-#define PI 3.14159265358979323846
+#include "argparse.h"
 
 #define MAX(X, Y) (((X) > (Y)) ? (X) : (Y))
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 
 #define NUM_COLORS 8
 
-const char png_string[] = ".png";
-const char source_string[] = "-SOURCE";
-const char out_string[] = "-OUT";
-const char scaled_string[] = "-SCALED";
-const char cost_string[] = "-COST";
-const char debug_string[] = "-DEBUG";
-
-uint8_t source_index = 0;
-uint8_t out_index = 0;
-uint8_t scaled_index = 0;
-uint8_t cost_index = 0;
-uint8_t debug_enable;
-uint8_t color_cost = 0;
-
-uint8_t CG3_PALETTE[] =
+uint8_t palette_rgb[] =
 {
 	0x00, 0xff, 0x00,	// GREEN
 	0xff, 0xff, 0x00,	// YELLOW
@@ -37,19 +22,19 @@ uint8_t CG3_PALETTE[] =
 	0xff, 0x80, 0x00,	// ORANGE
 };
 
-typedef struct CG3_ELEMENT
+typedef struct MAP_NODE
 {
 	unsigned int rms_error[NUM_COLORS];
 	unsigned int min_rms_error;
 	uint8_t source_offset_y;
 	uint8_t source_offset_x;
-} cg3_element;
+} map_node;
 
-typedef struct CG3_HEAP
+typedef struct MAP_HEAP
 {
-	cg3_element* elements;
+	map_node* elements;
 	unsigned int size;
-} cg3_heap;
+} map_heap;
 
 typedef struct PIXEL_IMAGE
 {
@@ -59,94 +44,6 @@ typedef struct PIXEL_IMAGE
 	unsigned int width;
 	unsigned int height;
 } pixel_image;
-
-int str_comp_partial(const char* str1, const char* str2)
-{
-	for(int i = 0; str1[i] && str2[i]; ++i)
-	{
-		if(str1[i] != str2[i])
-			return 0;
-	}
-	return 1;
-}
-
-void to_caps(char* str)
-{
-	unsigned int d = 0;
-	char prev_char = 0x00;
-	while(str[d])
-	{
-		//do not modifiy substrings that appear in quotes
-		if(str[d] == 0x22)	//double quotes
-		{
-			while(1)
-			{
-				++d;
-				if(!str[d])
-					return;
-				if(str[d] == 0x22 && prev_char != 0x5C)
-					break;
-				prev_char = str[d];
-			}
-		}
-		if(str[d] == 0x27)	//single quotes
-		{
-			while(1)
-			{
-				++d;
-				if(!str[d])
-					return;
-				if(str[d] == 0x27 && prev_char != 0x5C)
-					break;
-				prev_char = str[d];
-			}
-		}
-		if(str[d] == ';')	//skip comments
-			return;
-		if((str[d] > 0x60) & (str[d] < 0x7B))
-			str[d] = str[d] - 0x20;
-		prev_char = str[d];
-		++d;
-	}
-	return;
-}
-
-void replace_file_extension(char* new_ext, char* out_name, char* new_name)
-{
-	uint8_t count = 0;
-	uint8_t count_copy;
-	//copy string and get its length
-	do
-	{
-		new_name[count] = out_name[count];
-		++count;
-	}while(out_name[count]);
-	count_copy = count;
-	//search for a '.' starting from the end
-	while(count)
-	{
-		count = count - 1;
-		if(new_name[count] == '.')	//replace it and what follows with the new extension
-		{
-			for(unsigned int d = 0; d < 5; ++d)
-			{
-				new_name[count] = new_ext[d];
-				count = count + 1;
-			}
-			break;
-		}
-	}
-	//check if the file name had no '.'
-	if(count == 0)
-	{
-		count = count_copy;
-		for(unsigned int d = 0; d < 5; ++d)
-		{
-			new_name[count] = new_ext[d];
-			count = count + 1;
-		}
-	}
-}
 
 void create_pixel_image(pixel_image* input_image, unsigned int height, unsigned int width)
 {
@@ -216,7 +113,7 @@ void fill_RGBA_image(unsigned char* output_image, pixel_image* input_image)	//TO
 	}
 }
 
-void create_cg3_elements(cg3_element* output_elements, pixel_image* input_image)
+void create_map_nodes(map_node* output_elements, pixel_image* input_image)
 {
 	unsigned int element_offset = 0;
 	unsigned int rms_error;
@@ -231,20 +128,20 @@ void create_cg3_elements(cg3_element* output_elements, pixel_image* input_image)
 			{
 				//compute total diff_square
 				//red diff
-				diff_square = (unsigned int)pow((double)((int)(input_image->pixels_red[y][x]) - (int)(CG3_PALETTE[palette_index * 3])), 2);
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_red[y][x + 1]) - (int)(CG3_PALETTE[palette_index * 3])), 2);
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_red[y + 1][x]) - (int)(CG3_PALETTE[palette_index * 3])), 2);
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_red[y + 1][x + 1]) - (int)(CG3_PALETTE[palette_index * 3])), 2);
+				diff_square = (unsigned int)pow((double)((int)(input_image->pixels_red[y][x]) - (int)(palette_rgb[palette_index * 3])), 2);
+				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_red[y][x + 1]) - (int)(palette_rgb[palette_index * 3])), 2);
+				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_red[y + 1][x]) - (int)(palette_rgb[palette_index * 3])), 2);
+				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_red[y + 1][x + 1]) - (int)(palette_rgb[palette_index * 3])), 2);
 				//green diff
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y][x]) - (int)(CG3_PALETTE[palette_index * 3 + 1])), 2);
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y][x + 1]) - (int)(CG3_PALETTE[palette_index * 3 + 1])), 2);
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y + 1][x]) - (int)(CG3_PALETTE[palette_index * 3 + 1])), 2);
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y + 1][x + 1]) - (int)(CG3_PALETTE[palette_index * 3 + 1])), 2);
+				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y][x]) - (int)(palette_rgb[palette_index * 3 + 1])), 2);
+				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y][x + 1]) - (int)(palette_rgb[palette_index * 3 + 1])), 2);
+				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y + 1][x]) - (int)(palette_rgb[palette_index * 3 + 1])), 2);
+				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y + 1][x + 1]) - (int)(palette_rgb[palette_index * 3 + 1])), 2);
 				//blue diff
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y][x]) - (int)(CG3_PALETTE[palette_index * 3 + 2])), 2);
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y][x + 1]) - (int)(CG3_PALETTE[palette_index * 3 + 2])), 2);
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y + 1][x]) - (int)(CG3_PALETTE[palette_index * 3 + 2])), 2);
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y + 1][x + 1]) - (int)(CG3_PALETTE[palette_index * 3 + 2])), 2);
+				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y][x]) - (int)(palette_rgb[palette_index * 3 + 2])), 2);
+				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y][x + 1]) - (int)(palette_rgb[palette_index * 3 + 2])), 2);
+				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y + 1][x]) - (int)(palette_rgb[palette_index * 3 + 2])), 2);
+				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y + 1][x + 1]) - (int)(palette_rgb[palette_index * 3 + 2])), 2);
 				rms_error = (unsigned int)(sqrt((double)diff_square) + 0.5);
 				output_elements[element_offset].rms_error[palette_index] = rms_error;
 				if(rms_error < min_rms_error)
@@ -260,7 +157,7 @@ void create_cg3_elements(cg3_element* output_elements, pixel_image* input_image)
 	}
 }
 
-void create_cg3_output(uint8_t* cg3_output, cg3_element* input_elements, pixel_image* input_image)
+void create_cg3_output(uint8_t* cg3_output, map_node* input_elements, pixel_image* input_image)	//TODO: check if this really needs to recalculate the RMS error
 {
 	unsigned int rms_error;
 	unsigned int min_rms_error;
@@ -285,20 +182,20 @@ void create_cg3_output(uint8_t* cg3_output, cg3_element* input_elements, pixel_i
 		{
 			//compute total diff_square
 			//red diff
-			diff_square = (unsigned int)pow((double)((int)(input_image->pixels_red[y][x]) - (int)(CG3_PALETTE[palette_index * 3])), 2);
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_red[y][x + 1]) - (int)(CG3_PALETTE[palette_index * 3])), 2);
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_red[y + 1][x]) - (int)(CG3_PALETTE[palette_index * 3])), 2);
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_red[y + 1][x + 1]) - (int)(CG3_PALETTE[palette_index * 3])), 2);
+			diff_square = (unsigned int)pow((double)((int)(input_image->pixels_red[y][x]) - (int)(palette_rgb[palette_index * 3])), 2);
+			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_red[y][x + 1]) - (int)(palette_rgb[palette_index * 3])), 2);
+			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_red[y + 1][x]) - (int)(palette_rgb[palette_index * 3])), 2);
+			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_red[y + 1][x + 1]) - (int)(palette_rgb[palette_index * 3])), 2);
 			//green diff
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y][x]) - (int)(CG3_PALETTE[palette_index * 3 + 1])), 2);
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y][x + 1]) - (int)(CG3_PALETTE[palette_index * 3 + 1])), 2);
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y + 1][x]) - (int)(CG3_PALETTE[palette_index * 3 + 1])), 2);
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y + 1][x + 1]) - (int)(CG3_PALETTE[palette_index * 3 + 1])), 2);
+			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y][x]) - (int)(palette_rgb[palette_index * 3 + 1])), 2);
+			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y][x + 1]) - (int)(palette_rgb[palette_index * 3 + 1])), 2);
+			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y + 1][x]) - (int)(palette_rgb[palette_index * 3 + 1])), 2);
+			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y + 1][x + 1]) - (int)(palette_rgb[palette_index * 3 + 1])), 2);
 			//blue diff
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y][x]) - (int)(CG3_PALETTE[palette_index * 3 + 2])), 2);
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y][x + 1]) - (int)(CG3_PALETTE[palette_index * 3 + 2])), 2);
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y + 1][x]) - (int)(CG3_PALETTE[palette_index * 3 + 2])), 2);
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y + 1][x + 1]) - (int)(CG3_PALETTE[palette_index * 3 + 2])), 2);
+			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y][x]) - (int)(palette_rgb[palette_index * 3 + 2])), 2);
+			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y][x + 1]) - (int)(palette_rgb[palette_index * 3 + 2])), 2);
+			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y + 1][x]) - (int)(palette_rgb[palette_index * 3 + 2])), 2);
+			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y + 1][x + 1]) - (int)(palette_rgb[palette_index * 3 + 2])), 2);
 			rms_error = (unsigned int)(sqrt((double)diff_square) + 0.5);
 			rms_error = rms_error + (error_offset[palette_index] >> 8);
 			if(rms_error < min_rms_error)
@@ -314,12 +211,12 @@ void create_cg3_output(uint8_t* cg3_output, cg3_element* input_elements, pixel_i
 	}
 }
 
-void cg3_heapify_down(cg3_heap* heap, unsigned int index)
+void map_heapify_down(map_heap* heap, unsigned int index)
 {
 	unsigned int left_index;
 	unsigned int right_index;
 	unsigned int largest;
-	cg3_element temp;
+	map_node temp;
 	while(1)
 	{
 		left_index = index * 2 + 1;
@@ -338,29 +235,29 @@ void cg3_heapify_down(cg3_heap* heap, unsigned int index)
 	}
 }
 
-void cg3_heapify(cg3_heap* heap, cg3_element* elements, unsigned int size)
+void map_heapify(map_heap* heap, map_node* elements, unsigned int size)
 {
 	heap->size = size;
 	heap->elements = elements;
 	for(unsigned int index = size - 1; index != (unsigned int)(-1); --index)
 	{
-		cg3_heapify_down(heap, index);
+		map_heapify_down(heap, index);
 	}
 	return;
 }
 
-void cg3_heapsort(cg3_element* elements, unsigned int size)
+void map_heapsort(map_node* elements, unsigned int size)
 {
-	cg3_element temp;
-	cg3_heap heap;
-	cg3_heapify(&heap, elements, size);
+	map_node temp;
+	map_heap heap;
+	map_heapify(&heap, elements, size);
 	for(unsigned int end = size - 1; end != (unsigned int)(-1); --end)
 	{
 		temp = elements[end];
 		elements[end] = elements[0];
 		elements[0] = temp;
 		--size;
-		cg3_heapify(&heap, elements, size);
+		map_heapify(&heap, elements, size);
 	}
 	return;
 }
@@ -381,9 +278,9 @@ void cg3_to_rgba(unsigned char* output_image, uint8_t* input_image)
 			cg3_offset = (y >> 1) * 128 + (x >> 1);	//determine element offset
 			palette_index = input_image[cg3_offset];
 			//get colors
-			red = CG3_PALETTE[palette_index * 3];
-			green = CG3_PALETTE[palette_index * 3 + 1];
-			blue = CG3_PALETTE[palette_index * 3 + 2];
+			red = palette_rgb[palette_index * 3];
+			green = palette_rgb[palette_index * 3 + 1];
+			blue = palette_rgb[palette_index * 3 + 2];
 			output_image[rgba_offset] = red;
 			output_image[rgba_offset + 1] = green;
 			output_image[rgba_offset + 2] = blue;
@@ -446,7 +343,7 @@ void merge_image(uint8_t* output, unsigned int height, unsigned int width, uint8
 	return;
 }
 */
-	//TODO: reformat and scrutinize this
+	//TODO: check if this can be optimized (maybe use integer arithmetic?)
 void resize_bilinear(const uint8_t *src, unsigned int src_width, unsigned int src_height, uint8_t *dst, unsigned int dst_width, unsigned int dst_height)
 {
     float scale_x;
@@ -508,64 +405,8 @@ void resize_bilinear(const uint8_t *src, unsigned int src_width, unsigned int sr
 
 int main(int argc, char** argv)
 {
-	//Parse program arguments
-	debug_enable = 0;
-	unsigned int arg = 1;
-	if(argc == 1)
-	{
-		printf("Usage: -SOURCE <source file> -OUT <output image> -SCLAED <output scaled image> -COST <color cost factor> -DEBUG\n");
-		printf("-SCALED, -COST, and -DEBUG are optional\n");
-		printf("The color cost factor is 0 by default, max is 255. Increase this value to reduce color reuse.\n");
-		exit(1);
-	}
-	while(arg < (unsigned int)argc)
-	{
-		if(argv[arg][0] == '-')
-		{
-			to_caps(argv[arg]);
-			if(str_comp_partial(source_string, argv[arg]))
-			{
-				source_index = (uint8_t)++arg;
-			}
-			else if(str_comp_partial(out_string, argv[arg]))
-			{
-				out_index = (uint8_t)++arg;
-			}
-			else if(str_comp_partial(scaled_string, argv[arg]))
-			{
-				scaled_index = (uint8_t)++arg;
-			}
-			else if(str_comp_partial(cost_string, argv[arg]))
-			{
-				cost_index = (uint8_t)++arg;
-			}
-			else if(str_comp_partial(debug_string, argv[arg]))
-			{
-				debug_enable = 0xFF;
-			}
-			++arg;
-		}
-		else
-		{
-			source_index = (uint8_t)arg++;
-		}
-	}
-	if(arg > (unsigned int)argc)
-	{
-		printf("Invalid arguments!\n");
-		exit(1);
-	}
-	if(source_index == 0)
-	{
-		printf("No source file specified!\n");
-		exit(1);
-	}
-	if(out_index == 0)
-	{
-		printf("No output file specified!\n");
-		exit(1);
-	}
-
+	parse_args(argc, argv);
+	
 	unsigned char* image;
 	unsigned int width, height;
 
@@ -637,9 +478,9 @@ int main(int argc, char** argv)
 	printf("Filled in new RGB image\n");
 
 	//create cg3 elements
-	cg3_element cg3_display_elements[12288];
-	create_cg3_elements(cg3_display_elements, &scaled_image);
-	cg3_heapsort(cg3_display_elements, 12288);
+	map_node cg3_display_elements[12288];
+	create_map_nodes(cg3_display_elements, &scaled_image);
+	map_heapsort(cg3_display_elements, 12288);
 	printf("Created and sorted display elements\n");
 
 	if(debug_enable)
