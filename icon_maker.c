@@ -157,11 +157,10 @@ void create_map_nodes(map_node* output_elements, pixel_image* input_image)
 	}
 }
 
-void create_cg3_output(uint8_t* cg3_output, map_node* input_elements, pixel_image* input_image)	//TODO: check if this really needs to recalculate the RMS error
+void create_cg3_output(uint8_t* cg3_output, map_node* input_elements)
 {
 	unsigned int rms_error;
 	unsigned int min_rms_error;
-	unsigned int diff_square;
 	unsigned int error_offset[NUM_COLORS];
 	unsigned int x;
 	unsigned int y;
@@ -179,24 +178,8 @@ void create_cg3_output(uint8_t* cg3_output, map_node* input_elements, pixel_imag
 		x = input_elements[element_offset].source_offset_x;
 		y = input_elements[element_offset].source_offset_y;
 		for(uint8_t palette_index = 0; palette_index < NUM_COLORS; ++palette_index)
-		{
-			//compute total diff_square
-			//red diff
-			diff_square = (unsigned int)pow((double)((int)(input_image->pixels_red[y][x]) - (int)(palette_rgb[palette_index * 3])), 2);
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_red[y][x + 1]) - (int)(palette_rgb[palette_index * 3])), 2);
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_red[y + 1][x]) - (int)(palette_rgb[palette_index * 3])), 2);
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_red[y + 1][x + 1]) - (int)(palette_rgb[palette_index * 3])), 2);
-			//green diff
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y][x]) - (int)(palette_rgb[palette_index * 3 + 1])), 2);
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y][x + 1]) - (int)(palette_rgb[palette_index * 3 + 1])), 2);
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y + 1][x]) - (int)(palette_rgb[palette_index * 3 + 1])), 2);
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y + 1][x + 1]) - (int)(palette_rgb[palette_index * 3 + 1])), 2);
-			//blue diff
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y][x]) - (int)(palette_rgb[palette_index * 3 + 2])), 2);
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y][x + 1]) - (int)(palette_rgb[palette_index * 3 + 2])), 2);
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y + 1][x]) - (int)(palette_rgb[palette_index * 3 + 2])), 2);
-			diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y + 1][x + 1]) - (int)(palette_rgb[palette_index * 3 + 2])), 2);
-			rms_error = (unsigned int)(sqrt((double)diff_square) + 0.5);
+		{	
+			rms_error = input_elements[element_offset].rms_error[palette_index];
 			rms_error = rms_error + (error_offset[palette_index] >> 8);
 			if(rms_error < min_rms_error)
 			{
@@ -492,27 +475,8 @@ int main(int argc, char** argv)
 		}
 	}
 	
-	//create cg3 image
-	uint8_t cg3_image[12288];
-	create_cg3_output(cg3_image, cg3_display_elements, &scaled_image);
-	printf("Created CG3 image\n");
-
-	//create cg3 preview
+	//Output scaled image
 	unsigned int image_size;
-	image_size = 4 * 192 * 256;
-	unsigned char* rgba_cg3_preview = (unsigned char*)malloc(image_size * sizeof(unsigned char));
-	cg3_to_rgba(rgba_cg3_preview, cg3_image);
-	printf("Created CG3 preview\n");
-	//TODO: enforce PNG file extension
-	error = lodepng_encode32_file(argv[out_index], rgba_cg3_preview, 256, 192);
-	if(error)
-	{
-		printf("error %u: %s\n", error, lodepng_error_text(error));
-		return 1;
-	}
-	free(rgba_cg3_preview);
-	printf("Wrote CG3 preview\n");
-
 	if(scaled_index)
 	{
 		//convert RGB image to RGBA image
@@ -534,5 +498,26 @@ int main(int argc, char** argv)
 	}
 	
 	delete_pixel_image(&scaled_image);
+	
+	//create cg3 image
+	uint8_t cg3_image[12288];
+	create_cg3_output(cg3_image, cg3_display_elements);
+	printf("Created CG3 image\n");
+
+	//create cg3 preview
+	image_size = 4 * 192 * 256;
+	unsigned char* rgba_cg3_preview = (unsigned char*)malloc(image_size * sizeof(unsigned char));
+	cg3_to_rgba(rgba_cg3_preview, cg3_image);
+	printf("Created CG3 preview\n");
+	//TODO: enforce PNG file extension
+	error = lodepng_encode32_file(argv[out_index], rgba_cg3_preview, 256, 192);
+	if(error)
+	{
+		printf("error %u: %s\n", error, lodepng_error_text(error));
+		return 1;
+	}
+	free(rgba_cg3_preview);
+	printf("Wrote CG3 preview\n");
+
 	return 0;
 }
