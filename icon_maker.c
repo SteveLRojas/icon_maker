@@ -26,8 +26,8 @@ typedef struct MAP_NODE
 {
 	unsigned int rms_error[NUM_COLORS];
 	unsigned int min_rms_error;
-	uint8_t source_offset_y;
-	uint8_t source_offset_x;
+	unsigned int source_offset_y;
+	unsigned int source_offset_x;
 } map_node;
 
 typedef struct MAP_HEAP
@@ -113,11 +113,12 @@ void fill_RGBA_image(unsigned char* output_image, pixel_image* input_image)	//TO
 	}
 }
 
-void create_map_nodes(map_node* output_elements, pixel_image* input_image)
+void create_map_nodes(map_node* output_elements, pixel_image* input_image)	//TODO: do not cluster pixels into groups of 4, keep image size
 {
 	unsigned int element_offset = 0;
 	unsigned int rms_error;
 	unsigned int min_rms_error;
+	int diff;
 	unsigned int diff_square;
 	for(unsigned int y = 0; y < input_image->height; y = y + 2)
 	{
@@ -128,20 +129,32 @@ void create_map_nodes(map_node* output_elements, pixel_image* input_image)
 			{
 				//compute total diff_square
 				//red diff
-				diff_square = (unsigned int)pow((double)((int)(input_image->pixels_red[y][x]) - (int)(palette_rgb[palette_index * 3])), 2);
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_red[y][x + 1]) - (int)(palette_rgb[palette_index * 3])), 2);
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_red[y + 1][x]) - (int)(palette_rgb[palette_index * 3])), 2);
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_red[y + 1][x + 1]) - (int)(palette_rgb[palette_index * 3])), 2);
+				diff = (int)(input_image->pixels_red[y][x]) - (int)(palette_rgb[palette_index * 3]);
+				diff_square = (unsigned int)(diff * diff);
+				diff = (int)(input_image->pixels_red[y][x + 1]) - (int)(palette_rgb[palette_index * 3]);
+				diff_square += (unsigned int)(diff * diff);
+				diff = (int)(input_image->pixels_red[y + 1][x]) - (int)(palette_rgb[palette_index * 3]);
+				diff_square += (unsigned int)(diff * diff);
+				diff = (int)(input_image->pixels_red[y + 1][x + 1]) - (int)(palette_rgb[palette_index * 3]);
+				diff_square += (unsigned int)(diff * diff);
 				//green diff
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y][x]) - (int)(palette_rgb[palette_index * 3 + 1])), 2);
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y][x + 1]) - (int)(palette_rgb[palette_index * 3 + 1])), 2);
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y + 1][x]) - (int)(palette_rgb[palette_index * 3 + 1])), 2);
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_green[y + 1][x + 1]) - (int)(palette_rgb[palette_index * 3 + 1])), 2);
+				diff = (int)(input_image->pixels_green[y][x]) - (int)(palette_rgb[palette_index * 3 + 1]);
+				diff_square += (unsigned int)(diff * diff);
+				diff = (int)(input_image->pixels_green[y][x + 1]) - (int)(palette_rgb[palette_index * 3 + 1]);
+				diff_square += (unsigned int)(diff * diff);
+				diff = (int)(input_image->pixels_green[y + 1][x]) - (int)(palette_rgb[palette_index * 3 + 1]);
+				diff_square += (unsigned int)(diff * diff);
+				diff = (int)(input_image->pixels_green[y + 1][x + 1]) - (int)(palette_rgb[palette_index * 3 + 1]);
+				diff_square += (unsigned int)(diff * diff);
 				//blue diff
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y][x]) - (int)(palette_rgb[palette_index * 3 + 2])), 2);
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y][x + 1]) - (int)(palette_rgb[palette_index * 3 + 2])), 2);
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y + 1][x]) - (int)(palette_rgb[palette_index * 3 + 2])), 2);
-				diff_square += (unsigned int)pow((double)((int)(input_image->pixels_blue[y + 1][x + 1]) - (int)(palette_rgb[palette_index * 3 + 2])), 2);
+				diff = (int)(input_image->pixels_blue[y][x]) - (int)(palette_rgb[palette_index * 3 + 2]);
+				diff_square += (unsigned int)(diff * diff);
+				diff = (int)(input_image->pixels_blue[y][x + 1]) - (int)(palette_rgb[palette_index * 3 + 2]);
+				diff_square += (unsigned int)(diff * diff);
+				diff = (int)(input_image->pixels_blue[y + 1][x]) - (int)(palette_rgb[palette_index * 3 + 2]);
+				diff_square += (unsigned int)(diff * diff);
+				diff = (int)(input_image->pixels_blue[y + 1][x + 1]) - (int)(palette_rgb[palette_index * 3 + 2]);
+				diff_square += (unsigned int)(diff * diff);
 				rms_error = (unsigned int)(sqrt((double)diff_square) + 0.5);
 				output_elements[element_offset].rms_error[palette_index] = rms_error;
 				if(rms_error < min_rms_error)
@@ -157,7 +170,7 @@ void create_map_nodes(map_node* output_elements, pixel_image* input_image)
 	}
 }
 
-void create_cg3_output(uint8_t* cg3_output, map_node* input_elements)
+void create_cg3_output(uint8_t* cg3_output, map_node* input_elements)	//TODO: do not hardcode image size and do not assume 1/4 scaling (use no scaling instead).
 {
 	unsigned int rms_error;
 	unsigned int min_rms_error;
@@ -172,7 +185,7 @@ void create_cg3_output(uint8_t* cg3_output, map_node* input_elements)
 		error_offset[d] = 0;
 	}
 
-	for(unsigned int element_offset = 0; element_offset < 12288; ++element_offset)
+	for(unsigned int element_offset = 0; element_offset < 256 * 192 / 4; ++element_offset)
 	{
 		min_rms_error = (unsigned int)(-1);
 		x = input_elements[element_offset].source_offset_x;
@@ -245,7 +258,7 @@ void map_heapsort(map_node* elements, unsigned int size)
 	return;
 }
 
-void cg3_to_rgba(unsigned char* output_image, uint8_t* input_image)
+void cg3_to_rgba(unsigned char* output_image, uint8_t* input_image)	//TODO: this upscales by a factor of 4... Change to not do that.
 {
 	unsigned int cg3_offset;
 	//uint8_t pair_offset;
@@ -386,6 +399,7 @@ void resize_bilinear(const uint8_t *src, unsigned int src_width, unsigned int sr
     }
 }
 
+//TODO: Add option to upscale final output by an integer factor
 int main(int argc, char** argv)
 {
 	parse_args(argc, argv);
@@ -461,9 +475,9 @@ int main(int argc, char** argv)
 	printf("Filled in new RGB image\n");
 
 	//create cg3 elements
-	map_node cg3_display_elements[12288];
+	map_node cg3_display_elements[new_width * new_height / 4];
 	create_map_nodes(cg3_display_elements, &scaled_image);
-	map_heapsort(cg3_display_elements, 12288);
+	map_heapsort(cg3_display_elements, new_width * new_height / 4);
 	printf("Created and sorted display elements\n");
 
 	if(debug_enable)
@@ -500,7 +514,7 @@ int main(int argc, char** argv)
 	delete_pixel_image(&scaled_image);
 	
 	//create cg3 image
-	uint8_t cg3_image[12288];
+	uint8_t cg3_image[new_width * new_height / 4];
 	create_cg3_output(cg3_image, cg3_display_elements);
 	printf("Created CG3 image\n");
 
