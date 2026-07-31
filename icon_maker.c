@@ -235,8 +235,8 @@ void map_heapsort(map_node* elements, unsigned int size)
 		temp = elements[end];
 		elements[end] = elements[0];
 		elements[0] = temp;
-		--size;
-		map_heapify(&heap, elements, size);
+		heap.size = end;
+		map_heapify_down(&heap, 0);
 	}
 	return;
 }
