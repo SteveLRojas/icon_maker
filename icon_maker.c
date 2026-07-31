@@ -223,7 +223,7 @@ void map_heapsort(map_node* elements, unsigned int size)
 	return;
 }
 
-void color_map_to_rgba(unsigned char* output_image, uint8_t* input_image, unsigned int num_pixels)
+/*void color_map_to_rgba(unsigned char* output_image, uint8_t* input_image, unsigned int num_pixels)
 {
 	uint8_t palette_index;
 	unsigned int rgba_offset = 0;
@@ -236,6 +236,48 @@ void color_map_to_rgba(unsigned char* output_image, uint8_t* input_image, unsign
 		output_image[rgba_offset + 2] = palette_rgb[palette_index * 3 + 2];
 		output_image[rgba_offset + 3] = 255;
 		rgba_offset = rgba_offset + 4;
+	}
+}*/
+
+void color_map_to_rgba(uint8_t* color_map, unsigned int width, unsigned int height, uint8_t* output_image, uint8_t scale)
+{
+	unsigned int output_idx;
+	unsigned int copy_idx;
+	unsigned int map_idx;
+	unsigned int line_size = 4 * width * scale;
+	uint8_t palette_idx;
+	uint8_t red;
+	uint8_t green;
+	uint8_t blue;
+	
+	for(unsigned int palette_y = 0; palette_y < height; ++palette_y)
+	{
+		unsigned int y = palette_y * scale;
+		copy_idx = y * line_size;
+		for(unsigned int palette_x = 0; palette_x < width; ++palette_x)
+		{
+			unsigned int x = palette_x * scale;
+			map_idx = palette_y * width + palette_x;
+			output_idx = copy_idx + 4 * x;
+			palette_idx = 3 * color_map[map_idx];
+			red = palette_rgb[palette_idx];
+			green = palette_rgb[palette_idx + 1];
+			blue = palette_rgb[palette_idx + 2];
+			for(uint16_t d = 0; d < 4 * scale; d += 4)
+			{
+				output_image[output_idx + d] = red;
+				output_image[output_idx + d + 1] = green;
+				output_image[output_idx + d + 2] = blue;
+				output_image[output_idx + d + 3] = 255;
+			}
+		}
+		
+		output_idx = copy_idx;
+		for(uint8_t d = 1; d < scale; ++d)
+		{
+			copy_idx += line_size;
+			memcpy(output_image + copy_idx, output_image + output_idx, line_size); 
+		}
 	}
 }
 
@@ -292,7 +334,6 @@ void merge_image(uint8_t* output, unsigned int num_pixels, uint8_t* red, uint8_t
 	return;
 }
 
-//TODO: Add option to upscale final output by an integer factor
 //TODO: Add option to read per color initial cost, and per color reuse cost
 int main(int argc, char** argv)
 {
@@ -382,13 +423,13 @@ int main(int argc, char** argv)
 	printf("Created color map\n");
 
 	//create color-mapped image
-	unsigned char* mapped_image = (unsigned char*)malloc(4 * scaled_image.size * sizeof(unsigned char));
-	color_map_to_rgba(mapped_image, color_map, scaled_image.size);
+	unsigned char* mapped_image = (unsigned char*)malloc(4 * scaled_image.size * scale_factor * scale_factor * sizeof(unsigned char));
+	color_map_to_rgba(color_map, scaled_image.width, scaled_image.height, mapped_image, scale_factor);
 	free(color_map);
 	free(palette_rgb);
 	printf("Created color-mapped image\n");
 	//TODO: enforce PNG file extension
-	error = lodepng_encode32_file(argv[out_index], mapped_image, scaled_image.width, scaled_image.height);
+	error = lodepng_encode32_file(argv[out_index], mapped_image, scaled_image.width * scale_factor, scaled_image.height * scale_factor);
 	if(error)
 	{
 		printf("error %u: %s\n", error, lodepng_error_text(error));
