@@ -1,30 +1,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-//#include <math.h>
 #include "lodepng.h"
 #include "argparse.h"
 
 #define MAX(X, Y) (((X) > (Y)) ? (X) : (Y))
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 
-#define NUM_COLORS 8
+#define MAX_PALETTE_SIZE 32
 
-uint8_t palette_rgb[] =
-{
-	0x00, 0xff, 0x00,	// GREEN
-	0xff, 0xff, 0x00,	// YELLOW
-	0x00, 0x00, 0xff,	// BLUE
-	0xff, 0x00, 0x00,	// RED
-	0xff, 0xff, 0xff,	// BUFF
-	0x00, 0xff, 0xff,	// CYAN
-	0xff, 0x00, 0xff,	// MAGENTA
-	0xff, 0x80, 0x00,	// ORANGE
-};
+uint8_t* palette_rgb = NULL;
 
 typedef struct MAP_NODE
 {
-	unsigned int square_error[NUM_COLORS];
+	unsigned int square_error[MAX_PALETTE_SIZE];
 	unsigned int min_square_error;
 	unsigned int offset;
 } map_node;
@@ -130,7 +119,7 @@ void create_map_nodes(map_node* output_elements, pixel_image* input_image)
 	for(unsigned int node_idx = 0; node_idx < input_image->size; ++node_idx)
 	{
 		min_square_error = (unsigned int)(-1);
-		for(unsigned int palette_index = 0; palette_index < NUM_COLORS; ++palette_index)
+		for(unsigned int palette_index = 0; palette_index < palette_size; ++palette_index)
 		{
 			//compute total diff_square
 			//red diff
@@ -154,15 +143,15 @@ void create_map_nodes(map_node* output_elements, pixel_image* input_image)
 	}
 }
 
-void create_cg3_output(uint8_t* cg3_output, map_node* input_elements, unsigned int num_elements)
+void create_color_map(uint8_t* color_map, map_node* input_elements, unsigned int num_elements)
 {
 	unsigned int square_error;
 	unsigned int min_square_error;
-	unsigned int reuse_penalty[NUM_COLORS];
+	unsigned int reuse_penalty[MAX_PALETTE_SIZE];
 	unsigned int norm_reuse_penalty;
 	uint8_t best_match = 0;
 
-	for(unsigned int d = 0; d < NUM_COLORS; ++d)
+	for(unsigned int d = 0; d < palette_size; ++d)
 	{
 		reuse_penalty[d] = 0;
 	}
@@ -170,7 +159,7 @@ void create_cg3_output(uint8_t* cg3_output, map_node* input_elements, unsigned i
 	for(unsigned int element_offset = 0; element_offset < num_elements; ++element_offset)
 	{
 		min_square_error = (unsigned int)(-1);
-		for(uint8_t palette_index = 0; palette_index < NUM_COLORS; ++palette_index)
+		for(uint8_t palette_index = 0; palette_index < palette_size; ++palette_index)
 		{
 			norm_reuse_penalty = reuse_penalty[palette_index] >> reuse_shift;
 			square_error = input_elements[element_offset].square_error[palette_index];
@@ -181,7 +170,7 @@ void create_cg3_output(uint8_t* cg3_output, map_node* input_elements, unsigned i
 				best_match = palette_index;
 			}
 		}
-		cg3_output[input_elements[element_offset].offset] = best_match;
+		color_map[input_elements[element_offset].offset] = best_match;
 		reuse_penalty[best_match] += reuse_cost;	//tweak the increment for best results
 		//low increments are better for images with very uniform color
 	}
@@ -308,10 +297,24 @@ void merge_image(uint8_t* output, unsigned int num_pixels, uint8_t* red, uint8_t
 }
 
 //TODO: Add option to upscale final output by an integer factor
-//TODO: Add option to read custom color palette, per color initial cost, and per color reuse cost
+//TODO: Add option to read per color initial cost, and per color reuse cost
 int main(int argc, char** argv)
 {
 	parse_args(argc, argv);
+	
+	if(palette_index)
+	{
+		palette_rgb = load_palette(argv[palette_index]);
+	}
+	else
+	{
+		palette_rgb = load_palette("cg3.txt");
+	}
+	if(palette_size > MAX_PALETTE_SIZE)
+	{
+		printf("Maximum palette size exceeded! Truncating to %u colors.\n", MAX_PALETTE_SIZE);
+		palette_size = MAX_PALETTE_SIZE;
+	}
 
 	unsigned char* image;
 	pixel_image input_image;
@@ -350,11 +353,11 @@ int main(int argc, char** argv)
 	free(input_image.pixels_red);
 	printf("Scaled input image\n");
 
-	//create cg3 elements
-	map_node cg3_display_elements[scaled_image.size];
-	create_map_nodes(cg3_display_elements, &scaled_image);
+	//Create map nodes
+	map_node map_nodes[scaled_image.size];
+	create_map_nodes(map_nodes, &scaled_image);
 	printf("Created color map nodes\n");
-	map_heapsort(cg3_display_elements, scaled_image.size);
+	map_heapsort(map_nodes, scaled_image.size);
 	printf("Sorted color map nodes\n");
 
 	if(debug_enable)
@@ -362,7 +365,7 @@ int main(int argc, char** argv)
 		printf("Top 25 square errors:\n");
 		for(unsigned int d = 0; d < 25; ++d)
 		{
-			printf("%u\n", cg3_display_elements[d].min_square_error);
+			printf("%u\n", map_nodes[d].min_square_error);
 		}
 	}
 	
@@ -390,14 +393,15 @@ int main(int argc, char** argv)
 	free(scaled_image.pixels_green);
 	free(scaled_image.pixels_red);
 	
-	//create cg3 image
-	uint8_t cg3_image[scaled_image.size];
-	create_cg3_output(cg3_image, cg3_display_elements, scaled_image.size);
-	printf("Created CG3 image\n");
+	//create color map
+	uint8_t* color_map = (uint8_t*)malloc(sizeof(uint8_t) * scaled_image.size);
+	create_color_map(color_map, map_nodes, scaled_image.size);
+	printf("Created color map\n");
 
-	//create cg3 preview
+	//create color-mapped image
 	unsigned char* mapped_image = (unsigned char*)malloc(4 * scaled_image.size * sizeof(unsigned char));
-	color_map_to_rgba(mapped_image, cg3_image, scaled_image.size);
+	color_map_to_rgba(mapped_image, color_map, scaled_image.size);
+	free(color_map);
 	printf("Created color-mapped image\n");
 	//TODO: enforce PNG file extension
 	error = lodepng_encode32_file(argv[out_index], mapped_image, scaled_image.width, scaled_image.height);

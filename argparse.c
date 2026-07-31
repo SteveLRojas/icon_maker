@@ -9,6 +9,7 @@ const char out_string[] = "-OUT";
 const char scaled_string[] = "-SCALED";
 const char cost_string[] = "-COST";
 const char shift_string[] = "-SHIFT";
+const char palette_string[] = "-PALETTE";
 const char debug_string[] = "-DEBUG";
 
 uint8_t source_index = 0;
@@ -16,9 +17,11 @@ uint8_t out_index = 0;
 uint8_t scaled_index = 0;
 uint8_t cost_index = 0;
 uint8_t shift_index = 0;
-uint8_t debug_enable;
+uint8_t palette_index = 0;
+uint8_t debug_enable = 0;
 uint8_t reuse_cost = 0;
 uint8_t reuse_shift = 10;
+unsigned int palette_size = 0;
 
 int str_comp_partial(const char* str1, const char* str2)
 {
@@ -111,14 +114,14 @@ void replace_file_extension(char* new_ext, char* out_name, char* new_name)
 void parse_args(int argc, char** argv)
 {
 	//Parse program arguments
-	debug_enable = 0;
 	unsigned int arg = 1;
 	if(argc == 1)
 	{
-		printf("Usage: -SOURCE <source file> -OUT <output image> -SCLAED <output scaled image> -COST <color cost factor> -SHIFT <cost shift factor> -DEBUG\n");
-		printf("-SCALED, -COST, and -DEBUG are optional\n");
+		printf("Usage: -SOURCE <source file> -OUT <output image> -SCLAED <output scaled image>\n\t-COST <color cost factor> -SHIFT <cost shift factor> -PALETTE <palette file> -DEBUG\n");
+		printf("-SCALED, -COST, -PALETTE, and -DEBUG are optional\n");
 		printf("The color cost factor is 0 by default, max is 255. Increase this value to reduce color reuse.\n");
 		printf("The color cost shift factor is 10 by default, max is 31. Higher values weaken the effect of the color cost factor.\n");
+		printf("The default palette file is cg3.txt.\n");
 		exit(1);
 	}
 	while(arg < (unsigned int)argc)
@@ -145,6 +148,10 @@ void parse_args(int argc, char** argv)
 			else if(str_comp_partial(shift_string, argv[arg]))
 			{
 				shift_index = (uint8_t)++arg;
+			}
+			else if(str_comp_partial(palette_string, argv[arg]))
+			{
+				palette_index = (uint8_t)++arg;
 			}
 			else if(str_comp_partial(debug_string, argv[arg]))
 			{
@@ -183,4 +190,86 @@ void parse_args(int argc, char** argv)
 		reuse_shift = (uint8_t)atol(argv[shift_index]);
 		printf("Color reuse shift factor is: %u\n", reuse_shift);
 	}
+}
+
+uint8_t* load_palette(const char* filename)
+{
+    FILE* fp;
+    char line[64];
+    unsigned int color_count = 0;
+    uint8_t* palette;
+    unsigned int rgb;
+
+    fp = fopen(filename, "r");
+
+    if(fp == NULL)
+    {
+        fprintf(stderr, "Failed to open palette file: %s\n", filename);
+        return NULL;
+    }
+
+    /* First pass: count colors */
+    while(fgets(line, sizeof(line), fp))
+    {
+        char* ptr = line;
+
+        while((*ptr == ' ') || (*ptr == '\t') || (*ptr == '#'))
+        {
+            ++ptr;
+        }
+
+        if((*ptr == '\0') || (*ptr == '\n') || (*ptr == ';'))
+        {
+            continue;
+        }
+
+        ++color_count;
+    }
+
+    if(color_count == 0)
+    {
+        fclose(fp);
+        fprintf(stderr, "Palette file contains no colors\n");
+        return NULL;
+    }
+
+    palette = (uint8_t*)malloc(color_count * 3);
+    
+    /* Second pass: load colors */
+	rewind(fp);
+    color_count = 0;
+
+    while(fgets(line, sizeof(line), fp))
+    {
+        char* ptr = line;
+
+        while((*ptr == ' ') || (*ptr == '\t') || (*ptr == '#'))
+        {
+            ++ptr;
+        }
+
+        if((*ptr == '\0') || (*ptr == '\n') || (*ptr == ';'))
+        {
+            continue;
+        }
+
+        if(sscanf(ptr, "%06x", &rgb) != 1)
+        {
+            fprintf(stderr, "Invalid palette entry: %s", line);
+            free(palette);
+            fclose(fp);
+            return NULL;
+        }
+
+        palette[color_count * 3 + 0] = (rgb >> 16) & 0xFF;
+        palette[color_count * 3 + 1] = (rgb >> 8) & 0xFF;
+        palette[color_count * 3 + 2] = rgb & 0xFF;
+
+        ++color_count;
+    }
+
+    fclose(fp);
+    palette_size = color_count;
+    printf("Loaded %u palette colors\n", palette_size);
+    return palette;
 }

@@ -1,0 +1,9 @@
+; MC6847 CG3 palette
+00ff00	; GREEN
+ffff00	; YELLOW
+0000ff	; BLUE
+ff0000	; RED
+ffffff	; BUFF
+00ffff	; CYAN
+ff00ff	; MAGENTA
+ff8000	; ORANGE
