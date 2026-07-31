@@ -7,10 +7,6 @@
 #define MAX(X, Y) (((X) > (Y)) ? (X) : (Y))
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 
-#define MAX_PALETTE_SIZE 32
-
-uint8_t* palette_rgb = NULL;
-
 typedef struct MAP_NODE
 {
 	unsigned int square_error[MAX_PALETTE_SIZE];
@@ -301,20 +297,6 @@ void merge_image(uint8_t* output, unsigned int num_pixels, uint8_t* red, uint8_t
 int main(int argc, char** argv)
 {
 	parse_args(argc, argv);
-	
-	if(palette_index)
-	{
-		palette_rgb = load_palette(argv[palette_index]);
-	}
-	else
-	{
-		palette_rgb = load_palette("cg3.txt");
-	}
-	if(palette_size > MAX_PALETTE_SIZE)
-	{
-		printf("Maximum palette size exceeded! Truncating to %u colors.\n", MAX_PALETTE_SIZE);
-		palette_size = MAX_PALETTE_SIZE;
-	}
 
 	unsigned char* image;
 	pixel_image input_image;
@@ -347,14 +329,14 @@ int main(int argc, char** argv)
 	
 	//Create scaled image
 	pixel_image scaled_image;
-	scale_pixel_image(&input_image, &scaled_image, 192, 256);
+	scale_pixel_image(&input_image, &scaled_image, new_height, new_width);
 	free(input_image.pixels_blue);
 	free(input_image.pixels_green);
 	free(input_image.pixels_red);
 	printf("Scaled input image\n");
 
 	//Create map nodes
-	map_node map_nodes[scaled_image.size];
+	map_node* map_nodes = (map_node*)malloc(sizeof(map_node) * scaled_image.size);
 	create_map_nodes(map_nodes, &scaled_image);
 	printf("Created color map nodes\n");
 	map_heapsort(map_nodes, scaled_image.size);
@@ -396,12 +378,14 @@ int main(int argc, char** argv)
 	//create color map
 	uint8_t* color_map = (uint8_t*)malloc(sizeof(uint8_t) * scaled_image.size);
 	create_color_map(color_map, map_nodes, scaled_image.size);
+	free(map_nodes);
 	printf("Created color map\n");
 
 	//create color-mapped image
 	unsigned char* mapped_image = (unsigned char*)malloc(4 * scaled_image.size * sizeof(unsigned char));
 	color_map_to_rgba(mapped_image, color_map, scaled_image.size);
 	free(color_map);
+	free(palette_rgb);
 	printf("Created color-mapped image\n");
 	//TODO: enforce PNG file extension
 	error = lodepng_encode32_file(argv[out_index], mapped_image, scaled_image.width, scaled_image.height);
