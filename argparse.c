@@ -8,14 +8,17 @@ const char source_string[] = "-SOURCE";
 const char out_string[] = "-OUT";
 const char scaled_string[] = "-SCALED";
 const char cost_string[] = "-COST";
+const char shift_string[] = "-SHIFT";
 const char debug_string[] = "-DEBUG";
 
 uint8_t source_index = 0;
 uint8_t out_index = 0;
 uint8_t scaled_index = 0;
 uint8_t cost_index = 0;
+uint8_t shift_index = 0;
 uint8_t debug_enable;
-uint8_t color_cost = 0;
+uint8_t reuse_cost = 0;
+uint8_t reuse_shift = 10;
 
 int str_comp_partial(const char* str1, const char* str2)
 {
@@ -112,9 +115,10 @@ void parse_args(int argc, char** argv)
 	unsigned int arg = 1;
 	if(argc == 1)
 	{
-		printf("Usage: -SOURCE <source file> -OUT <output image> -SCLAED <output scaled image> -COST <color cost factor> -DEBUG\n");
+		printf("Usage: -SOURCE <source file> -OUT <output image> -SCLAED <output scaled image> -COST <color cost factor> -SHIFT <cost shift factor> -DEBUG\n");
 		printf("-SCALED, -COST, and -DEBUG are optional\n");
 		printf("The color cost factor is 0 by default, max is 255. Increase this value to reduce color reuse.\n");
+		printf("The color cost shift factor is 10 by default, max is 31. Higher values weaken the effect of the color cost factor.\n");
 		exit(1);
 	}
 	while(arg < (unsigned int)argc)
@@ -137,6 +141,10 @@ void parse_args(int argc, char** argv)
 			else if(str_comp_partial(cost_string, argv[arg]))
 			{
 				cost_index = (uint8_t)++arg;
+			}
+			else if(str_comp_partial(shift_string, argv[arg]))
+			{
+				shift_index = (uint8_t)++arg;
 			}
 			else if(str_comp_partial(debug_string, argv[arg]))
 			{
@@ -163,5 +171,16 @@ void parse_args(int argc, char** argv)
 	{
 		printf("No output file specified!\n");
 		exit(1);
+	}
+	
+	if(cost_index)
+	{
+		reuse_cost = (uint8_t)atol(argv[cost_index]);
+		printf("Color reuse cost factor is: %u\n", reuse_cost);
+	}
+	if(shift_index)
+	{
+		reuse_shift = (uint8_t)atol(argv[shift_index]);
+		printf("Color reuse shift factor is: %u\n", reuse_shift);
 	}
 }

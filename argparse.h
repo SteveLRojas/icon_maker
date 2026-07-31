@@ -5,8 +5,10 @@ extern uint8_t source_index;
 extern uint8_t out_index;
 extern uint8_t scaled_index;
 extern uint8_t cost_index;
+extern uint8_t shift_index;
 extern uint8_t debug_enable;
-extern uint8_t color_cost;
+extern uint8_t reuse_cost;
+extern uint8_t reuse_shift;
 
 int str_comp_partial(const char* str1, const char* str2);
 void to_caps(char* str);

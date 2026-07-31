@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <math.h>
+//#include <math.h>
 #include "lodepng.h"
 #include "argparse.h"
 
@@ -24,8 +24,8 @@ uint8_t palette_rgb[] =
 
 typedef struct MAP_NODE
 {
-	unsigned int rms_error[NUM_COLORS];
-	unsigned int min_rms_error;
+	unsigned int square_error[NUM_COLORS];
+	unsigned int min_square_error;
 	unsigned int offset;
 } map_node;
 
@@ -123,14 +123,13 @@ void scale_pixel_image(pixel_image* input_image, pixel_image* output_image, unsi
 void create_map_nodes(map_node* output_elements, pixel_image* input_image)
 {
 	unsigned int element_offset = 0;
-	unsigned int rms_error;
-	unsigned int min_rms_error;
+	unsigned int min_square_error;
 	int diff;
 	unsigned int diff_square;
 	
 	for(unsigned int node_idx = 0; node_idx < input_image->size; ++node_idx)
 	{
-		min_rms_error = (unsigned int)(-1);
+		min_square_error = (unsigned int)(-1);
 		for(unsigned int palette_index = 0; palette_index < NUM_COLORS; ++palette_index)
 		{
 			//compute total diff_square
@@ -143,14 +142,13 @@ void create_map_nodes(map_node* output_elements, pixel_image* input_image)
 			//blue diff
 			diff = (int)(input_image->pixels_blue[node_idx]) - (int)(palette_rgb[palette_index * 3 + 2]);
 			diff_square += (unsigned int)(diff * diff);
-			rms_error = (unsigned int)(sqrt((double)diff_square) + 0.5);
-			output_elements[element_offset].rms_error[palette_index] = rms_error;
-			if(rms_error < min_rms_error)
+			output_elements[element_offset].square_error[palette_index] = diff_square;
+			if(diff_square < min_square_error)
 			{
-				min_rms_error = rms_error;
+				min_square_error = diff_square;
 			}
 		}
-		output_elements[element_offset].min_rms_error = min_rms_error;
+		output_elements[element_offset].min_square_error = min_square_error;
 		output_elements[element_offset].offset = node_idx;
 		++element_offset;
 	}
@@ -158,31 +156,33 @@ void create_map_nodes(map_node* output_elements, pixel_image* input_image)
 
 void create_cg3_output(uint8_t* cg3_output, map_node* input_elements, unsigned int num_elements)
 {
-	unsigned int rms_error;
-	unsigned int min_rms_error;
-	unsigned int error_offset[NUM_COLORS];
+	unsigned int square_error;
+	unsigned int min_square_error;
+	unsigned int reuse_penalty[NUM_COLORS];
+	unsigned int norm_reuse_penalty;
 	uint8_t best_match = 0;
 
 	for(unsigned int d = 0; d < NUM_COLORS; ++d)
 	{
-		error_offset[d] = 0;
+		reuse_penalty[d] = 0;
 	}
 
 	for(unsigned int element_offset = 0; element_offset < num_elements; ++element_offset)
 	{
-		min_rms_error = (unsigned int)(-1);
+		min_square_error = (unsigned int)(-1);
 		for(uint8_t palette_index = 0; palette_index < NUM_COLORS; ++palette_index)
-		{	
-			rms_error = input_elements[element_offset].rms_error[palette_index];
-			rms_error = rms_error + (error_offset[palette_index] >> 10);
-			if(rms_error < min_rms_error)
+		{
+			norm_reuse_penalty = reuse_penalty[palette_index] >> reuse_shift;
+			square_error = input_elements[element_offset].square_error[palette_index];
+			square_error = square_error + norm_reuse_penalty * norm_reuse_penalty;
+			if(square_error < min_square_error)
 			{
-				min_rms_error = rms_error;
+				min_square_error = square_error;
 				best_match = palette_index;
 			}
 		}
 		cg3_output[input_elements[element_offset].offset] = best_match;
-		error_offset[best_match] = error_offset[best_match] + color_cost;	//tweak the increment for best results
+		reuse_penalty[best_match] += reuse_cost;	//tweak the increment for best results
 		//low increments are better for images with very uniform color
 	}
 }
@@ -198,9 +198,9 @@ void map_heapify_down(map_heap* heap, unsigned int index)
 		left_index = index * 2 + 1;
 		right_index = index * 2 + 2;
 		largest = index;
-		if((left_index < heap->size) && (heap->elements[left_index].min_rms_error > heap->elements[largest].min_rms_error))
+		if((left_index < heap->size) && (heap->elements[left_index].min_square_error > heap->elements[largest].min_square_error))
 			largest = left_index;
-		if((right_index < heap->size) && (heap->elements[right_index].min_rms_error > heap->elements[largest].min_rms_error))
+		if((right_index < heap->size) && (heap->elements[right_index].min_square_error > heap->elements[largest].min_square_error))
 			largest = right_index;
 		if(largest == index)
 			return;
@@ -312,12 +312,6 @@ void merge_image(uint8_t* output, unsigned int num_pixels, uint8_t* red, uint8_t
 int main(int argc, char** argv)
 {
 	parse_args(argc, argv);
-	
-	if(cost_index)
-	{
-		color_cost = (uint8_t)atol(argv[cost_index]);
-		printf("Color cost factor is: %u\n", color_cost);
-	}
 
 	unsigned char* image;
 	pixel_image input_image;
@@ -365,10 +359,10 @@ int main(int argc, char** argv)
 
 	if(debug_enable)
 	{
-		printf("Top 25 RMS errors:\n");
+		printf("Top 25 square errors:\n");
 		for(unsigned int d = 0; d < 25; ++d)
 		{
-			printf("%u\n", cg3_display_elements[d].min_rms_error);
+			printf("%u\n", cg3_display_elements[d].min_square_error);
 		}
 	}
 	
